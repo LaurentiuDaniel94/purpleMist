@@ -105,6 +105,7 @@ export class BaselineInfrastructure extends cdk.Stack {
       imageScanOnPush: true,
       imageTagMutability: ecr.TagMutability.MUTABLE
     });
+
     // ALB
     const alb = new elbv2.ApplicationLoadBalancer(this, 'OpenWebUIALB', {
       vpc: infraVpc,
@@ -134,7 +135,7 @@ export class BaselineInfrastructure extends cdk.Stack {
       defaultTargetGroups: [targetGroup]
     });
 
-    // Create the roles first
+    // Create the roles
     const taskRole = new iam.Role(this, 'OpenWebUITaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
       description: 'Role that the task definition will use to run the container',
@@ -145,7 +146,7 @@ export class BaselineInfrastructure extends cdk.Stack {
       description: 'Role that ECS will use to start the task',
     });
 
-    // ECS Task Definition
+    // Task Definition
     const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
       memoryLimitMiB: 512,
       cpu: 256,
@@ -203,7 +204,13 @@ export class BaselineInfrastructure extends cdk.Stack {
       environment: {
         'WEBUI_SECRET_KEY': '123456',
         'DEBUG': 'true',
-        'DATABASE_URL': `postgresql://${ecs.Secret.fromSecretsManager(dbInstance.secret!, 'username').toString()}:${ecs.Secret.fromSecretsManager(dbInstance.secret!, 'password').toString()}@${dbInstance.instanceEndpoint.hostname}:5432/${ecs.Secret.fromSecretsManager(dbInstance.secret!, 'dbname').toString()}`
+      },
+      secrets: {
+        'WEBUI_DB_USER': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'username'),
+        'WEBUI_DB_PASSWORD': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'password'),
+        'WEBUI_DB_HOST': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'DATABASE_URL'),
+        'WEBUI_DB_PORT': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'port'),
+        'WEBUI_DB_NAME': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'dbname'),
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'openwebui',
@@ -213,7 +220,10 @@ export class BaselineInfrastructure extends cdk.Stack {
         multilinePattern: '^\\S+'
       }),
       healthCheck: {
-        command: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"],
+        command: [
+          "CMD-SHELL", 
+          "env && curl -f http://localhost:8080/health || exit 1"
+        ],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
         retries: 3,
