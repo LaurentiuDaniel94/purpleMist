@@ -64,13 +64,11 @@ export class BaselineInfrastructure extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY, // or RETAIN for prod
     });
 
-    // ECS Cluster with Fargate
-    const ecsCluster = new ecs.Cluster(this, "EcsCluster", {
-      vpc: infraVpc,
-      clusterName: 'llm-platform-cluster',
-      containerInsights: true,
-      enableFargateCapacityProviders: true
-    });
+    // const ecsCluster = new ecs.Cluster(this, "EcsCluster", {
+    //   vpc: infraVpc,
+    //   containerInsights: true,
+    //   enableFargateCapacityProviders: true
+    // });
 
     // Security group for ECS tasks
     const ecsSecurityGroup = new ec2.SecurityGroup(this, 'ECSSecurityGroup', {
