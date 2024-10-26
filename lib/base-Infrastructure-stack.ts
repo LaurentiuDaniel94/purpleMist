@@ -3,6 +3,7 @@ import * as ec2 from "aws-cdk-lib/aws-ec2"
 import * as ecs from "aws-cdk-lib/aws-ecs"
 import * as rds from "aws-cdk-lib/aws-rds"
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
 
 
 export class BaselineInfrastructure extends cdk.Stack {
@@ -64,11 +65,27 @@ export class BaselineInfrastructure extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY, // or RETAIN for prod
     });
 
+    // Create ECR repository for OpenWebUI and Bedrock Gateway Proxy
+    const ecrRepository = new ecr.Repository(this, 'ecrRepository', {
+      repositoryName: 'llm-platform-ecr-repo',
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      imageScanOnPush: true,
+      imageTagMutability: ecr.TagMutability.MUTABLE
+    });
+
+    // Output the repository URI
+    new cdk.CfnOutput(this, 'EcrRepositoryUri', {
+      value: ecrRepository.repositoryUri,
+      description: 'ECR Repository URI',
+      exportName: 'ecrRepositoryUri'
+    });
+
     // const ecsCluster = new ecs.Cluster(this, "EcsCluster", {
     //   vpc: infraVpc,
     //   containerInsights: true,
     //   enableFargateCapacityProviders: true
     // });
+
 
     // Security group for ECS tasks
     const ecsSecurityGroup = new ec2.SecurityGroup(this, 'ECSSecurityGroup', {
