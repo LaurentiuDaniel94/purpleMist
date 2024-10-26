@@ -169,7 +169,7 @@ const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
 const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
   image: ecs.ContainerImage.fromEcrRepository(ecrRepository, 'openwebui'),
   environment: {
-    'WEBUI_SECRET_KEY': 'your-secret-key',
+    'WEBUI_SECRET_KEY': '123456',
   },
   secrets: {
     // Use individual components
@@ -182,6 +182,7 @@ const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
     'POSTGRES_DB': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'dbname'),
   },
 });
+
 
 openWebUIContainer.addPortMappings({
   containerPort: 8080,
