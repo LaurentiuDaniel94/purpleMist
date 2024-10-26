@@ -158,7 +158,12 @@ const listener = alb.addListener('Listener', {
 const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
   memoryLimitMiB: 512,
   cpu: 256,
+  runtimePlatform: {
+    cpuArchitecture: ecs.CpuArchitecture.ARM64,
+    operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+  },
 });
+
 
 // Add container to task definition
 const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
