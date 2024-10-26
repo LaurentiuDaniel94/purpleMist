@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
-    
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -33,14 +32,20 @@ jobs:
         
     - name: Install dependencies
       run: npm ci
+      
+    - name: Run tests (if you have any)
+      run: npm test
+      continue-on-error: true
 
+    - name: Bootstrap CDK
+      run: npx cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID }}/${{ secrets.AWS_REGION }}
+      
     - name: CDK Synth
       run: npx cdk synth
       
     - name: CDK Diff
       run: npx cdk diff
-      # This will show changes before deployment
       
     - name: CDK Deploy
-      if: github.ref == 'refs/heads/main' # Only deploy on main branch
+      if: github.ref == 'refs/heads/main'
       run: npx cdk deploy --require-approval never
