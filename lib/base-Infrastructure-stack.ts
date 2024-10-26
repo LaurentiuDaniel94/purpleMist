@@ -4,6 +4,8 @@ import * as ecs from "aws-cdk-lib/aws-ecs"
 import * as rds from "aws-cdk-lib/aws-rds"
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 
 export class BaselineInfrastructure extends cdk.Stack {
@@ -80,13 +82,6 @@ export class BaselineInfrastructure extends cdk.Stack {
       exportName: 'ecrRepositoryUri'
     });
 
-    // const ecsCluster = new ecs.Cluster(this, "EcsCluster", {
-    //   vpc: infraVpc,
-    //   containerInsights: true,
-    //   enableFargateCapacityProviders: true
-    // });
-
-
     // Security group for ECS tasks
     const ecsSecurityGroup = new ec2.SecurityGroup(this, 'ECSSecurityGroup', {
       vpc: infraVpc,
@@ -112,5 +107,110 @@ export class BaselineInfrastructure extends cdk.Stack {
       description: 'RDS instance endpoint',
       exportName: 'dbEndpoint'
     });
+
+    // Create security group for internet-facing ALB
+    const albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSecurityGroup', {
+      vpc: infraVpc,
+      description: 'Security group for ALB',
+      allowAllOutbound: true,
+      securityGroupName: 'openwebui-alb-sg'
+    });
+
+   // Allow inbound HTTP
+   albSecurityGroup.addIngressRule(
+   ec2.Peer.anyIpv4(),
+   ec2.Port.tcp(80),
+   'Allow HTTP traffic'
+);
+
+  // Create ALB
+
+  // Create ALB
+const alb = new elbv2.ApplicationLoadBalancer(this, 'OpenWebUIALB', {
+  vpc: infraVpc,
+  internetFacing: true,
+  securityGroup: albSecurityGroup,
+  vpcSubnets: {
+    subnetType: ec2.SubnetType.PUBLIC
+  }
+});
+
+// Create Target Group
+const targetGroup = new elbv2.ApplicationTargetGroup(this, 'OpenWebUITargetGroup', {
+  vpc: infraVpc,
+  port: 8080,
+  protocol: elbv2.ApplicationProtocol.HTTP,
+  targetType: elbv2.TargetType.IP,
+  healthCheck: {
+    path: '/health',  // Verify this health check path
+    healthyThresholdCount: 2,
+    unhealthyThresholdCount: 3
+  }
+});
+
+// Add Listener
+const listener = alb.addListener('Listener', {
+  port: 80,
+  defaultTargetGroups: [targetGroup]
+});
+
+// Create Task Definition for OpenWebUI
+const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
+  memoryLimitMiB: 512,
+  cpu: 256,
+});
+
+// Add container to task definition
+const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
+  image: ecs.ContainerImage.fromEcrRepository(ecrRepository, 'openwebui'),
+  environment: {
+    'WEBUI_DB_HOST': dbInstance.instanceEndpoint.hostname,
+    'WEBUI_DB_PORT': '5432',
+    'WEBUI_DB_NAME': 'openwebui_db',
+  },
+  secrets: {
+    'DATABASE_URL': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'DATABASE_URL'),
+  },
+  logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'openwebui' }),
+});
+
+openWebUIContainer.addPortMappings({
+  containerPort: 8080,
+  protocol: ecs.Protocol.TCP
+});
+
+// Create ECS Cluster
+const cluster = new ecs.Cluster(this, 'OpenWebUICluster', {
+  vpc: infraVpc
+});
+
+// Create ECS Service
+const openWebUIService = new ecs.FargateService(this, 'OpenWebUIService', {
+  cluster: cluster,
+  taskDefinition: openWebUITaskDef,
+  desiredCount: 1,
+  securityGroups: [ecsSecurityGroup],
+  assignPublicIp: false,
+  vpcSubnets: {
+    subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
+  }
+});
+
+// Add to target group
+openWebUIService.attachToApplicationTargetGroup(targetGroup);
+
+// Allow traffic from ALB to ECS tasks
+ecsSecurityGroup.addIngressRule(
+  ec2.Peer.securityGroupId(albSecurityGroup.securityGroupId),
+  ec2.Port.tcp(8080),
+  'Allow traffic from ALB'
+);
+
+// Output the ALB DNS name
+new cdk.CfnOutput(this, 'AlbDnsName', {
+  value: alb.loadBalancerDnsName,
+  description: 'ALB DNS Name',
+  exportName: 'albDnsName'
+});
   }
 }
