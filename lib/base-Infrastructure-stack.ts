@@ -197,29 +197,30 @@ export class BaselineInfrastructure extends cdk.Stack {
       })
     );
 
-    // Container Definition
-    const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
-      image: ecs.ContainerImage.fromEcrRepository(ecrRepository, 'openwebui'),
-      environment: {
-        'WEBUI_SECRET_KEY': '123456',
-        'DEBUG': 'true',
-        'DATABASE_URL': `postgresql://${ecs.Secret.fromSecretsManager(dbInstance.secret!, 'username').toString()}:${ecs.Secret.fromSecretsManager(dbInstance.secret!, 'password').toString()}@${dbInstance.instanceEndpoint.hostname}:5432/${ecs.Secret.fromSecretsManager(dbInstance.secret!, 'dbname').toString()}`
-      },
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: 'openwebui',
-        logRetention: logs.RetentionDays.ONE_WEEK,
-        mode: ecs.AwsLogDriverMode.NON_BLOCKING,
-        datetimeFormat: '%Y-%m-%d %H:%M:%S',
-        multilinePattern: '^\\S+'
-      }),
-      healthCheck: {
-        command: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"],
-        interval: cdk.Duration.seconds(30),
-        timeout: cdk.Duration.seconds(5),
-        retries: 3,
-        startPeriod: cdk.Duration.seconds(60),
-      },
-    });
+// Container Definition
+const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
+  image: ecs.ContainerImage.fromEcrRepository(ecrRepository, 'openwebui'),
+  environment: {
+    'WEBUI_SECRET_KEY': '123456',
+    'DEBUG': 'true',
+    // Construct DATABASE_URL using the values we know from the secret
+    'DATABASE_URL': `postgresql://${dbInstance.secret!.secretValueFromJson('username').unsafeUnwrap()}:${dbInstance.secret!.secretValueFromJson('password').unsafeUnwrap()}@${dbInstance.secret!.secretValueFromJson('DATABASE_URL').unsafeUnwrap()}:${dbInstance.secret!.secretValueFromJson('port').unsafeUnwrap()}/${dbInstance.secret!.secretValueFromJson('dbname').unsafeUnwrap()}`
+  },
+  logging: ecs.LogDrivers.awsLogs({
+    streamPrefix: 'openwebui',
+    logRetention: logs.RetentionDays.ONE_WEEK,
+    mode: ecs.AwsLogDriverMode.NON_BLOCKING,
+    datetimeFormat: '%Y-%m-%d %H:%M:%S',
+    multilinePattern: '^\\S+'
+  }),
+  healthCheck: {
+    command: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"],
+    interval: cdk.Duration.seconds(30),
+    timeout: cdk.Duration.seconds(5),
+    retries: 3,
+    startPeriod: cdk.Duration.seconds(60),
+  },
+});
 
     openWebUIContainer.addPortMappings({
       containerPort: 8080,
