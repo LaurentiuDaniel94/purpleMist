@@ -105,6 +105,7 @@ export class BaselineInfrastructure extends cdk.Stack {
       imageScanOnPush: true,
       imageTagMutability: ecr.TagMutability.MUTABLE
     });
+
     // ALB
     const alb = new elbv2.ApplicationLoadBalancer(this, 'OpenWebUIALB', {
       vpc: infraVpc,
@@ -134,7 +135,7 @@ export class BaselineInfrastructure extends cdk.Stack {
       defaultTargetGroups: [targetGroup]
     });
 
-    // Create the roles first
+    // Create the roles
     const taskRole = new iam.Role(this, 'OpenWebUITaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
       description: 'Role that the task definition will use to run the container',
@@ -145,7 +146,7 @@ export class BaselineInfrastructure extends cdk.Stack {
       description: 'Role that ECS will use to start the task',
     });
 
-    // ECS Task Definition
+    // Task Definition
     const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
       memoryLimitMiB: 512,
       cpu: 256,
@@ -197,30 +198,38 @@ export class BaselineInfrastructure extends cdk.Stack {
       })
     );
 
-// Container Definition
-const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
-  image: ecs.ContainerImage.fromEcrRepository(ecrRepository, 'openwebui'),
-  environment: {
-    'WEBUI_SECRET_KEY': '123456',
-    'DEBUG': 'true',
-    // Construct DATABASE_URL using the values we know from the secret
-    'DATABASE_URL': `postgresql://${dbInstance.secret!.secretValueFromJson('username').unsafeUnwrap()}:${dbInstance.secret!.secretValueFromJson('password').unsafeUnwrap()}@${dbInstance.secret!.secretValueFromJson('DATABASE_URL').unsafeUnwrap()}:${dbInstance.secret!.secretValueFromJson('port').unsafeUnwrap()}/${dbInstance.secret!.secretValueFromJson('dbname').unsafeUnwrap()}`
-  },
-  logging: ecs.LogDrivers.awsLogs({
-    streamPrefix: 'openwebui',
-    logRetention: logs.RetentionDays.ONE_WEEK,
-    mode: ecs.AwsLogDriverMode.NON_BLOCKING,
-    datetimeFormat: '%Y-%m-%d %H:%M:%S',
-    multilinePattern: '^\\S+'
-  }),
-  healthCheck: {
-    command: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"],
-    interval: cdk.Duration.seconds(30),
-    timeout: cdk.Duration.seconds(5),
-    retries: 3,
-    startPeriod: cdk.Duration.seconds(60),
-  },
-});
+    // Container Definition
+    const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
+      image: ecs.ContainerImage.fromEcrRepository(ecrRepository, 'openwebui'),
+      environment: {
+        'WEBUI_SECRET_KEY': '123456',
+        'DEBUG': 'true',
+      },
+      secrets: {
+        'WEBUI_DB_USER': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'username'),
+        'WEBUI_DB_PASSWORD': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'password'),
+        'WEBUI_DB_HOST': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'DATABASE_URL'),
+        'WEBUI_DB_PORT': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'port'),
+        'WEBUI_DB_NAME': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'dbname'),
+      },
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'openwebui',
+        logRetention: logs.RetentionDays.ONE_WEEK,
+        mode: ecs.AwsLogDriverMode.NON_BLOCKING,
+        datetimeFormat: '%Y-%m-%d %H:%M:%S',
+        multilinePattern: '^\\S+'
+      }),
+      healthCheck: {
+        command: [
+          "CMD-SHELL", 
+          "env && curl -f http://localhost:8080/health || exit 1"
+        ],
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
+        retries: 3,
+        startPeriod: cdk.Duration.seconds(60),
+      },
+    });
 
     openWebUIContainer.addPortMappings({
       containerPort: 8080,
