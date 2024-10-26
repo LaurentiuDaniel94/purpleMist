@@ -169,15 +169,20 @@ const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
 const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
   image: ecs.ContainerImage.fromEcrRepository(ecrRepository, 'openwebui'),
   environment: {
-    'WEBUI_DB_HOST': dbInstance.instanceEndpoint.hostname,
-    'WEBUI_DB_PORT': '5432',
-    'WEBUI_DB_NAME': 'openwebui_db',
+    'WEBUI_SECRET_KEY': '123456',
   },
   secrets: {
-    'DATABASE_URL': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'DATABASE_URL'),
+    // Use individual components
+    'DATABASE_URL': ecs.Secret.fromSecretsManager(
+      dbInstance.secret!,
+      'DATABASE_URL'
+    ),
+    'POSTGRES_USER': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'username'),
+    'POSTGRES_PASSWORD': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'password'),
+    'POSTGRES_DB': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'dbname'),
   },
-  logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'openwebui' }),
 });
+
 
 openWebUIContainer.addPortMappings({
   containerPort: 8080,
