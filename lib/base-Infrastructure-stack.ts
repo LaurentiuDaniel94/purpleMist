@@ -204,6 +204,8 @@ export class BaselineInfrastructure extends cdk.Stack {
       environment: {
         'WEBUI_SECRET_KEY': '123456',
         'DEBUG': 'true',
+        'DATABASE_TYPE': 'postgres',
+        'DATABASE_URL': `postgresql://postgres:=9nKAy=xNJpGycGv3WM7WHnAOONcNU@openwebui-db.ce0twoub7pwu.us-west-2.rds.amazonaws.com:5432/openwebui_db`,
       },
       secrets: {
         'WEBUI_DB_USER': ecs.Secret.fromSecretsManager(dbInstance.secret!, 'username'),
