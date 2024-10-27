@@ -2,7 +2,7 @@
 import * as cdk from "aws-cdk-lib"
 import * as ec2 from "aws-cdk-lib/aws-ec2"
 
-export class VpcStack extends cdk.Stack {
+export class BaselineInfrastructure extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
   public readonly dbSecurityGroup: ec2.SecurityGroup;
   public readonly ecsSecurityGroup: ec2.SecurityGroup;
