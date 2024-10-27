@@ -30,6 +30,16 @@ export class EcsStack extends cdk.Stack {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
     });
 
+    // Add task role permissions for EFS
+    taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: [
+        'elasticfilesystem:ClientMount',
+        'elasticfilesystem:ClientWrite',
+        'elasticfilesystem:ClientRootAccess'
+      ],
+      resources: ['*']  // Will be restricted to specific EFS ARN later
+    }));
+
     // ECS Cluster
     const cluster = new ecs.Cluster(this, 'OpenWebUICluster', {
       vpc: props.vpc,
@@ -65,19 +75,33 @@ export class EcsStack extends cdk.Stack {
       throughputMode: efs.ThroughputMode.BURSTING,
       encrypted: true,
       securityGroup: efsSecurityGroup,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
+      },
+      removalPolicy: cdk.RemovalPolicy.DESTROY
     });
+
+    // Update task role permissions with specific EFS ARN
+    taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: [
+        'elasticfilesystem:ClientMount',
+        'elasticfilesystem:ClientWrite',
+        'elasticfilesystem:ClientRootAccess'
+      ],
+      resources: [fileSystem.fileSystemArn]
+    }));
 
     // Create Access Point for EFS
     const accessPoint = fileSystem.addAccessPoint('AccessPoint', {
-      path: '/webui-data',
+      path: '/data',
       createAcl: {
-        ownerUid: '1001',
-        ownerGid: '1001',
-        permissions: '750',
+        ownerUid: '1000',
+        ownerGid: '1000',
+        permissions: '755'
       },
       posixUser: {
-        uid: '1001',
-        gid: '1001',
+        uid: '1000',
+        gid: '1000'
       },
     });
 
@@ -99,15 +123,13 @@ export class EcsStack extends cdk.Stack {
     );
 
     // Add EFS permissions to execution role
-    executionRole.addToPolicy(new iam.PolicyStatement({
+    executionRole.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: [
         'elasticfilesystem:ClientMount',
         'elasticfilesystem:ClientWrite',
         'elasticfilesystem:DescribeMountTargets'
       ],
-      resources: [
-        fileSystem.fileSystemArn
-      ],
+      resources: [fileSystem.fileSystemArn]
     }));
 
     // EFS Volume Configuration
@@ -120,6 +142,7 @@ export class EcsStack extends cdk.Stack {
           accessPointId: accessPoint.accessPointId,
           iam: 'ENABLED',
         },
+        rootDirectory: '/'
       },
     });
 
@@ -129,7 +152,8 @@ export class EcsStack extends cdk.Stack {
       environment: {
         'WEBUI_SECRET_KEY': '123456',
         'DEBUG': 'true',
-        'DATABASE_TYPE': 'efs',
+        'DATABASE_TYPE': 'sqlite',
+        'DATABASE_PATH': '/app/backend/data/webui.db'
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'openwebui',
@@ -162,16 +186,19 @@ export class EcsStack extends cdk.Stack {
         cloudMapNamespace: namespace,
         name: 'open-webui',
       },
+      maxHealthyPercent: 200,
+      minHealthyPercent: 50,
+      healthCheckGracePeriod: cdk.Duration.seconds(60),
     });
 
-    // Attach the OpenWebUI ECS Service to the ALB
-    props.alb.listeners[0].addTargets('OpenWebUITarget', {
-      port: 8080,
-      targets: [openWebUIService],
-      priority: 1,
-      conditions: [
-        elbv2.ListenerCondition.pathPatterns(['/openwebui*'])
-      ]
+    // Attach to ALB
+    openWebUIService.attachToApplicationTargetGroup(props.targetGroup);
+
+    // Output the File System ID
+    new cdk.CfnOutput(this, 'FileSystemId', {
+      value: fileSystem.fileSystemId,
+      description: 'EFS File System ID',
+      exportName: 'efsFileSystemId'
     });
 
     // Output ALB DNS
