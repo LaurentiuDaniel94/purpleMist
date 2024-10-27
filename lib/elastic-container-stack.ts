@@ -1,17 +1,15 @@
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
-import * as rds from "aws-cdk-lib/aws-rds";
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
-import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as efs from 'aws-cdk-lib/aws-efs';
 
 interface EcsStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
-  dbInstance: rds.DatabaseInstance;
   ecsSecurityGroup: ec2.SecurityGroup;
   albSecurityGroup: ec2.SecurityGroup;
   repository: ecr.Repository;
@@ -22,17 +20,6 @@ interface EcsStackProps extends cdk.StackProps {
 export class EcsStack extends cdk.Stack {
   constructor(scope: cdk.App, id: string, props: EcsStackProps) {
     super(scope, id, props);
-
-    // Retrieve the existing RDS secret values to construct the DATABASE_URL
-    const dbSecret = props.dbInstance.secret!;
-    const databaseUrl = `postgresql://${dbSecret.secretValueFromJson('username').unsafeUnwrap()}:${dbSecret.secretValueFromJson('password').unsafeUnwrap()}@${dbSecret.secretValueFromJson('host').unsafeUnwrap()}:${dbSecret.secretValueFromJson('port').unsafeUnwrap()}/${dbSecret.secretValueFromJson('dbname').unsafeUnwrap()}`;
-
-    // Create a new secret in AWS Secrets Manager to store the DATABASE_URL
-    const databaseUrlSecret = new secretsmanager.Secret(this, 'DatabaseUrlSecret', {
-      secretName: 'openwebui-database-url',
-      description: 'PostgreSQL connection string for the OpenWebUI application',
-      secretStringValue: cdk.SecretValue.unsafePlainText(databaseUrl),
-    });
 
     // Create roles
     const taskRole = new iam.Role(this, 'OpenWebUITaskRole', {
@@ -56,6 +43,29 @@ export class EcsStack extends cdk.Stack {
       description: 'Service discovery namespace for OpenWebUI services',
     });
 
+    // Create EFS File System
+    const fileSystem = new efs.FileSystem(this, 'OpenWebUIEfs', {
+      vpc: props.vpc,
+      lifecyclePolicy: efs.LifecyclePolicy.AFTER_7_DAYS,
+      performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
+      throughputMode: efs.ThroughputMode.BURSTING,
+      encrypted: true,
+    });
+
+    // Create Access Point for EFS
+    const accessPoint = fileSystem.addAccessPoint('AccessPoint', {
+      path: '/webui-data',
+      createAcl: {
+        ownerUid: '1001',
+        ownerGid: '1001',
+        permissions: '750',
+      },
+      posixUser: {
+        uid: '1001',
+        gid: '1001',
+      },
+    });
+
     // Task Definition for OpenWebUI
     const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
       memoryLimitMiB: 512,
@@ -73,19 +83,18 @@ export class EcsStack extends cdk.Stack {
       iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy')
     );
 
-    executionRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'secretsmanager:GetSecretValue',
-          'kms:Decrypt'
-        ],
-        resources: [
-          props.dbInstance.secret!.secretArn,
-          databaseUrlSecret.secretArn,
-        ]
-      })
-    );
+    // EFS Volume Configuration
+    openWebUITaskDef.addVolume({
+      name: 'WebUIEfsVolume',
+      efsVolumeConfiguration: {
+        fileSystemId: fileSystem.fileSystemId,
+        transitEncryption: 'ENABLED',
+        authorizationConfig: {
+          accessPointId: accessPoint.accessPointId,
+          iam: 'ENABLED',
+        },
+      },
+    });
 
     // Container Definition for OpenWebUI
     const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
@@ -93,11 +102,7 @@ export class EcsStack extends cdk.Stack {
       environment: {
         'WEBUI_SECRET_KEY': '123456',
         'DEBUG': 'true',
-        'DATABASE_TYPE': 'postgres',
-        'OLLAMA_BASE_URL': 'http://ollama.openwebui.local:11434', // Using service discovery for Ollama
-      },
-      secrets: {
-        'DATABASE_URL': ecs.Secret.fromSecretsManager(databaseUrlSecret),
+        'DATABASE_TYPE': 'efs',
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'openwebui',
@@ -108,6 +113,13 @@ export class EcsStack extends cdk.Stack {
     openWebUIContainer.addPortMappings({
       containerPort: 8080,
       protocol: ecs.Protocol.TCP
+    });
+
+    // Mount EFS to the container
+    openWebUIContainer.addMountPoints({
+      containerPath: '/app/backend/data',
+      sourceVolume: 'WebUIEfsVolume',
+      readOnly: false,
     });
 
     // ECS Service for OpenWebUI
@@ -122,43 +134,6 @@ export class EcsStack extends cdk.Stack {
       cloudMapOptions: {
         cloudMapNamespace: namespace,
         name: 'open-webui',
-      },
-    });
-
-    // Task Definition for Ollama
-    const ollamaTaskDef = new ecs.FargateTaskDefinition(this, 'OllamaTask', {
-      memoryLimitMiB: 512,
-      cpu: 256,
-      taskRole: taskRole,
-      executionRole: executionRole,
-    });
-
-    // Container Definition for Ollama
-    const ollamaContainer = ollamaTaskDef.addContainer('Ollama', {
-      image: ecs.ContainerImage.fromRegistry('ollama/ollama'), // Replace with the correct image name for Ollama
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: 'ollama',
-        logRetention: logs.RetentionDays.ONE_WEEK,
-      }),
-    });
-
-    ollamaContainer.addPortMappings({
-      containerPort: 11434,
-      protocol: ecs.Protocol.TCP
-    });
-
-    // ECS Service for Ollama
-    const ollamaService = new ecs.FargateService(this, 'OllamaService', {
-      cluster,
-      taskDefinition: ollamaTaskDef,
-      desiredCount: 1,
-      securityGroups: [props.ecsSecurityGroup],
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
-      },
-      cloudMapOptions: {
-        cloudMapNamespace: namespace,
-        name: 'ollama',
       },
     });
 
