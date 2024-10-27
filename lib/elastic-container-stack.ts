@@ -7,6 +7,7 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
 interface EcsStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
@@ -21,6 +22,17 @@ interface EcsStackProps extends cdk.StackProps {
 export class EcsStack extends cdk.Stack {
   constructor(scope: cdk.App, id: string, props: EcsStackProps) {
     super(scope, id, props);
+
+    // Retrieve the existing RDS secret values to construct the DATABASE_URL
+    const dbSecret = props.dbInstance.secret!;
+    const databaseUrl = `postgresql://${dbSecret.secretValueFromJson('username').unsafeUnwrap()}:${dbSecret.secretValueFromJson('password').unsafeUnwrap()}@${dbSecret.secretValueFromJson('host').unsafeUnwrap()}:${dbSecret.secretValueFromJson('port').unsafeUnwrap()}/${dbSecret.secretValueFromJson('dbname').unsafeUnwrap()}`;
+
+    // Create a new secret in AWS Secrets Manager to store the DATABASE_URL
+    const databaseUrlSecret = new secretsmanager.Secret(this, 'DatabaseUrlSecret', {
+      secretName: 'openwebui-database-url',
+      description: 'PostgreSQL connection string for the OpenWebUI application',
+      secretStringValue: cdk.SecretValue.unsafePlainText(databaseUrl),
+    });
 
     // Create roles
     const taskRole = new iam.Role(this, 'OpenWebUITaskRole', {
@@ -68,7 +80,10 @@ export class EcsStack extends cdk.Stack {
           'secretsmanager:GetSecretValue',
           'kms:Decrypt'
         ],
-        resources: [props.dbInstance.secret!.secretArn]
+        resources: [
+          props.dbInstance.secret!.secretArn,
+          databaseUrlSecret.secretArn,
+        ]
       })
     );
 
@@ -82,7 +97,7 @@ export class EcsStack extends cdk.Stack {
         'OLLAMA_BASE_URL': 'http://ollama.openwebui.local:11434', // Using service discovery for Ollama
       },
       secrets: {
-        'DATABASE_URL': ecs.Secret.fromSecretsManager(props.dbInstance.secret!),
+        'DATABASE_URL': ecs.Secret.fromSecretsManager(databaseUrlSecret),
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'openwebui',
