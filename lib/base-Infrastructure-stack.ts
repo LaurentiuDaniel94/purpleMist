@@ -19,22 +19,23 @@ export class BaselineVPCInfrastructure extends cdk.Stack {
       maxAzs: 3,
       natGateways: 1,
       vpcName: "llm-platform-vpc",
+      restrictDefaultSecurityGroup: false,
       ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/24'),
       subnetConfiguration: [
         {
           name: 'Public',
           subnetType: ec2.SubnetType.PUBLIC,
-          cidrMask: 28,  // For subnets like 10.0.0.0/28
+          cidrMask: 28,
         },
         {
           name: 'Private',
           subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-          cidrMask: 28,  // For subnets like 10.0.0.16/28
+          cidrMask: 28,
         },
         {
           name: 'BedrockGateway',
           subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-          cidrMask: 28,  // For subnets like 10.0.0.32/28
+          cidrMask: 28,
         }
       ]
     });
