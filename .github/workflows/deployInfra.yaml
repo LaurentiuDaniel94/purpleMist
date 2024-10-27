@@ -47,4 +47,8 @@ jobs:
       run: npx cdk diff --all
       
     - name: CDK Deploy
-      run: npx cdk deploy --all
+      run: |
+        npx cdk deploy --all \
+          --require-approval never \
+          --force \
+          --strict
