@@ -11,7 +11,7 @@ export class BaseVPCInfrastructure extends cdk.Stack {
   constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // VPC
+    // Base infrastructure
     this.vpc = new ec2.Vpc(this, "InfraVpc", {
       maxAzs: 3,
       natGateways: 1,
