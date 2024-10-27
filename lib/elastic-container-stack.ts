@@ -66,6 +66,20 @@ export class EcsStack extends cdk.Stack {
       },
     });
 
+    // Create Security Group for EFS
+    const efsSecurityGroup = new ec2.SecurityGroup(this, 'EFSSecurityGroup', {
+      vpc: props.vpc,
+      description: 'Security group for EFS',
+      allowAllOutbound: true,
+    });
+
+    // Allow NFS traffic from ECS Security Group to EFS
+    efsSecurityGroup.addIngressRule(
+      ec2.Peer.securityGroupId(props.ecsSecurityGroup.securityGroupId),
+      ec2.Port.tcp(2049),
+      'Allow NFS access from ECS tasks'
+    );
+
     // Task Definition for OpenWebUI
     const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
       memoryLimitMiB: 512,
@@ -82,6 +96,18 @@ export class EcsStack extends cdk.Stack {
     executionRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy')
     );
+
+    // Add EFS permissions to execution role
+    executionRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'elasticfilesystem:ClientMount',
+        'elasticfilesystem:ClientWrite',
+        'elasticfilesystem:DescribeMountTargets'
+      ],
+      resources: [
+        fileSystem.fileSystemArn
+      ],
+    }));
 
     // EFS Volume Configuration
     openWebUITaskDef.addVolume({
