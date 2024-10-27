@@ -202,7 +202,6 @@ export class EcsStack extends cdk.Stack {
       },
       maxHealthyPercent: 200,
       minHealthyPercent: 50,
-      healthCheckGracePeriod: cdk.Duration.seconds(60),
     });
 
     // Add dependency
@@ -272,7 +271,6 @@ export class EcsStack extends cdk.Stack {
         cloudMapNamespace: bedrockNamespace,
         name: 'bedrock-gateway',
       },
-      healthCheckGracePeriod: cdk.Duration.seconds(60),
     });
 
     // Output the File System ID
