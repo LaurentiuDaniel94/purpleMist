@@ -36,6 +36,24 @@ export class BaselineInfrastructure extends cdk.Stack {
       ]
     });
 
+    // Add VPC Endpoints for ECS and ECR
+    infraVpc.addInterfaceEndpoint('EcrEndpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.ECR,
+    });
+
+    infraVpc.addInterfaceEndpoint('EcrDockerEndpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
+    });
+
+    infraVpc.addGatewayEndpoint('S3Endpoint', {
+      service: ec2.GatewayVpcEndpointAwsService.S3,
+    });
+
+    // Add endpoint for Secrets Manager
+    infraVpc.addInterfaceEndpoint('SecretsEndpoint', {
+      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+    });
+
     // Security Groups
     const dbSecurityGroup = new ec2.SecurityGroup(this, 'DBSecurityGroup', {
       vpc: infraVpc,
@@ -224,7 +242,7 @@ export class BaselineInfrastructure extends cdk.Stack {
       healthCheck: {
         command: [
           "CMD-SHELL", 
-          "env && curl -f http://localhost:8080/health || exit 1"
+          "pg_isready -h openwebui-db.ce0twoub7pwu.us-west-2.rds.amazonaws.com -p 5432 -U postgres || exit 1"
         ],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
