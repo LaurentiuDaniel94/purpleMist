@@ -13,40 +13,14 @@ interface EcsStackProps extends cdk.StackProps {
   ecsSecurityGroup: ec2.SecurityGroup;
   albSecurityGroup: ec2.SecurityGroup;
   repository: ecr.Repository;
+  alb: elbv2.ApplicationLoadBalancer;
+  targetGroup: elbv2.ApplicationTargetGroup;
 }
 
 export class EcsStack extends cdk.Stack {
   constructor(scope: cdk.App, id: string, props: EcsStackProps) {
     super(scope, id, props);
 
-    // ALB
-    const alb = new elbv2.ApplicationLoadBalancer(this, 'OpenWebUIALB', {
-      vpc: props.vpc,
-      internetFacing: true,
-      securityGroup: props.albSecurityGroup,
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PUBLIC
-      }
-    });
-
-    // Target Group
-    const targetGroup = new elbv2.ApplicationTargetGroup(this, 'OpenWebUITargetGroup', {
-      vpc: props.vpc,
-      port: 8080,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      targetType: elbv2.TargetType.IP,
-      healthCheck: {
-        path: '/health',
-        healthyThresholdCount: 2,
-        unhealthyThresholdCount: 3
-      }
-    });
-
-    // ALB Listener
-    const listener = alb.addListener('Listener', {
-      port: 80,
-      defaultTargetGroups: [targetGroup]
-    });
 
     // Create roles
     const taskRole = new iam.Role(this, 'OpenWebUITaskRole', {
@@ -93,16 +67,16 @@ const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
     'WEBUI_SECRET_KEY': '123456',
     'DEBUG': 'true',
     'DATABASE_TYPE': 'postgres',
+    // Set the DATABASE_URL explicitly with the correct format
+    'DATABASE_URL': `postgresql://postgres:${props.dbInstance.secret?.secretValueFromJson('password')}@${props.dbInstance.secret?.secretValueFromJson('host')}:5432/${props.dbInstance.secret?.secretValueFromJson('dbname')}`,
   },
+  // Keep other environment variables as backup
   secrets: {
-    // Individual components for database connection
-    'WEBUI_DB_USER': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'username'),
-    'WEBUI_DB_PASSWORD': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'password'),
-    'WEBUI_DB_HOST': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'host'),
-    'WEBUI_DB_PORT': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'port'),
-    'WEBUI_DB_NAME': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'dbname'),
-    // Construct DATABASE_URL directly
-    'DATABASE_URL': ecs.Secret.fromSecretsManager(props.dbInstance.secret!),
+    'POSTGRES_USER': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'username'),
+    'POSTGRES_PASSWORD': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'password'),
+    'POSTGRES_HOST': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'host'),
+    'POSTGRES_PORT': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'port'),
+    'POSTGRES_DB': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'dbname'),
   },
   logging: ecs.LogDrivers.awsLogs({
     streamPrefix: 'openwebui',
@@ -132,11 +106,18 @@ const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
       }
     });
 
-    service.attachToApplicationTargetGroup(targetGroup);
+    props.alb.listeners[0].addTargets('OpenWebUITarget', {
+      port: 8080,
+      targets: [service],
+      priority: 1,
+      conditions: [
+        elbv2.ListenerCondition.pathPatterns(['/openwebui*'])
+      ]
+    });
 
     // Output ALB DNS
     new cdk.CfnOutput(this, 'AlbDnsName', {
-      value: alb.loadBalancerDnsName,
+      value: props.alb.loadBalancerDnsName,
       description: 'ALB DNS Name',
       exportName: 'albDnsName'
     });
