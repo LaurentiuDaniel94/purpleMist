@@ -13,40 +13,14 @@ interface EcsStackProps extends cdk.StackProps {
   ecsSecurityGroup: ec2.SecurityGroup;
   albSecurityGroup: ec2.SecurityGroup;
   repository: ecr.Repository;
+  alb: elbv2.ApplicationLoadBalancer;
+  targetGroup: elbv2.ApplicationTargetGroup;
 }
 
 export class EcsStack extends cdk.Stack {
   constructor(scope: cdk.App, id: string, props: EcsStackProps) {
     super(scope, id, props);
 
-    // ALB
-    const alb = new elbv2.ApplicationLoadBalancer(this, 'OpenWebUIALB', {
-      vpc: props.vpc,
-      internetFacing: true,
-      securityGroup: props.albSecurityGroup,
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PUBLIC
-      }
-    });
-
-    // Target Group
-    const targetGroup = new elbv2.ApplicationTargetGroup(this, 'OpenWebUITargetGroup', {
-      vpc: props.vpc,
-      port: 8080,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      targetType: elbv2.TargetType.IP,
-      healthCheck: {
-        path: '/health',
-        healthyThresholdCount: 2,
-        unhealthyThresholdCount: 3
-      }
-    });
-
-    // ALB Listener
-    const listener = alb.addListener('Listener', {
-      port: 80,
-      defaultTargetGroups: [targetGroup]
-    });
 
     // Create roles
     const taskRole = new iam.Role(this, 'OpenWebUITaskRole', {
@@ -132,11 +106,18 @@ const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
       }
     });
 
-    service.attachToApplicationTargetGroup(targetGroup);
+    props.alb.listeners[0].addTargets('OpenWebUITarget', {
+      port: 8080,
+      targets: [service],
+      priority: 1,
+      conditions: [
+        elbv2.ListenerCondition.pathPatterns(['/openwebui*'])
+      ]
+    });
 
     // Output ALB DNS
     new cdk.CfnOutput(this, 'AlbDnsName', {
-      value: alb.loadBalancerDnsName,
+      value: props.alb.loadBalancerDnsName,
       description: 'ALB DNS Name',
       exportName: 'albDnsName'
     });

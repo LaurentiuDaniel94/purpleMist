@@ -26,6 +26,8 @@ const ecsStack = new EcsStack(app, 'EcsStack', {
   ecsSecurityGroup: baselineVPCInfrastructure.ecsSecurityGroup,
   albSecurityGroup: baselineVPCInfrastructure.albSecurityGroup,
   repository: ecrStack.repository,
+  alb: baselineVPCInfrastructure.alb,
+  targetGroup: baselineVPCInfrastructure.targetGroup,
 });
 
 // Add dependencies

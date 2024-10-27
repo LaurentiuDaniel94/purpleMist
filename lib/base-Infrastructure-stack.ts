@@ -1,11 +1,14 @@
 import * as cdk from "aws-cdk-lib"
 import * as ec2 from "aws-cdk-lib/aws-ec2"
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 
 export class BaselineVPCInfrastructure extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
   public readonly dbSecurityGroup: ec2.SecurityGroup;
   public readonly ecsSecurityGroup: ec2.SecurityGroup;
   public readonly albSecurityGroup: ec2.SecurityGroup;
+  public readonly alb: elbv2.ApplicationLoadBalancer;
+  public readonly targetGroup: elbv2.ApplicationTargetGroup;
 
   constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -103,5 +106,34 @@ export class BaselineVPCInfrastructure extends cdk.Stack {
       ec2.Port.tcp(5432),
       'Allow PostgreSQL access from ECS tasks'
     );
+
+    // ALB
+    this.alb = new elbv2.ApplicationLoadBalancer(this, 'OpenWebUIALB', {
+        vpc: this.vpc,
+        internetFacing: true,
+        securityGroup: this.albSecurityGroup,
+        vpcSubnets: {
+          subnetType: ec2.SubnetType.PUBLIC
+        }
+      });
+  
+      // Target Group
+      this.targetGroup = new elbv2.ApplicationTargetGroup(this, 'OpenWebUITargetGroup', {
+        vpc: this.vpc,
+        port: 8080,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        targetType: elbv2.TargetType.IP,
+        healthCheck: {
+          path: '/health',
+          healthyThresholdCount: 2,
+          unhealthyThresholdCount: 3
+        }
+      });
+      
+          // ALB Listener
+          const listener = this.alb.addListener('OpenWebUIListener', {
+            port: 80,
+            defaultTargetGroups: [this.targetGroup]
+          });
   }
 }
