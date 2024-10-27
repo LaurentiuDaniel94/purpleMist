@@ -8,7 +8,7 @@ import { EcsStack } from '../lib/elastic-container-stack';
 const app = new cdk.App();
 
 // Create VPC Stack
-const baselineVPCInfrastructure = new BaselineVPCInfrastructure(app, 'VpcStack');
+const baselineVPCInfrastructure = new BaselineVPCInfrastructure(app, 'baselineVPCInfrastructure');
 
 // Create ECR Stack
 const ecrStack = new EcrStack(app, 'EcrStack');
