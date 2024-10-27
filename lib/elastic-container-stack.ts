@@ -117,8 +117,8 @@ export class EcsStack extends cdk.Stack {
 
     // Task Definition for OpenWebUI
     const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
-      memoryLimitMiB: 512,
-      cpu: 256,
+      memoryLimitMiB: 2048,  // Increase from 512 to 2048
+      cpu: 1024,            // Increase from 256 to 1024
       taskRole: taskRole,
       executionRole: executionRole,
       runtimePlatform: {
@@ -157,19 +157,27 @@ export class EcsStack extends cdk.Stack {
     });
 
     // Container Definition for OpenWebUI
-    const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
-      image: ecs.ContainerImage.fromEcrRepository(props.repository, 'openwebui'),
-      environment: {
-        'WEBUI_SECRET_KEY': '123456',
-        'DEBUG': 'true',
-        'DATABASE_TYPE': 'sqlite',
-        'DATABASE_PATH': '/app/backend/data/webui.db'
-      },
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: 'openwebui',
-        logRetention: logs.RetentionDays.ONE_WEEK,
-      }),
-    });
+// Container Definition for OpenWebUI
+const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
+  image: ecs.ContainerImage.fromEcrRepository(props.repository, 'openwebui'),
+  environment: {
+    'WEBUI_SECRET_KEY': '123456',
+    'DEBUG': 'true',
+    'DATABASE_TYPE': 'sqlite',
+    'DATABASE_PATH': '/app/backend/data/webui.db',
+    // Add HuggingFace env vars
+    'HF_HUB_ENABLE_HF_TRANSFER': 'true',
+    'TRANSFORMERS_CACHE': '/app/backend/data/cache',
+    'HF_HOME': '/app/backend/data/huggingface',
+    'USER_AGENT': 'open-webui/0.3.10',
+    'local_files_only': 'false',
+    'HUGGINGFACE_HUB_CACHE': '/app/backend/data/huggingface',
+  },
+  logging: ecs.LogDrivers.awsLogs({
+    streamPrefix: 'openwebui',
+    logRetention: logs.RetentionDays.ONE_WEEK,
+  }),
+});
 
     openWebUIContainer.addPortMappings({
       containerPort: 8080,
