@@ -213,12 +213,5 @@ export class EcsStack extends cdk.Stack {
       description: 'EFS File System ID',
       exportName: 'efsFileSystemId'
     });
-
-    // Output ALB DNS
-    new cdk.CfnOutput(this, 'AlbDnsName', {
-      value: props.alb.loadBalancerDnsName,
-      description: 'ALB DNS Name',
-      exportName: 'albDnsName'
-    });
   }
 }
