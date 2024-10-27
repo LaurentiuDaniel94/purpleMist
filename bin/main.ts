@@ -20,17 +20,17 @@ const dbStack = new DatabaseStack(app, 'DatabaseStack', {
 });
 
 // // Create ECS Stack
-// const ecsStack = new EcsStack(app, 'EcsStack', {
-//   vpc: baselineVPCInfrastructure.vpc,
-//   dbInstance: dbStack.dbInstance,
-//   ecsSecurityGroup: baselineVPCInfrastructure.ecsSecurityGroup,
-//   albSecurityGroup: baselineVPCInfrastructure.albSecurityGroup,
-//   repository: ecrStack.repository,
-// });
+const ecsStack = new EcsStack(app, 'EcsStack', {
+  vpc: baselineVPCInfrastructure.vpc,
+  dbInstance: dbStack.dbInstance,
+  ecsSecurityGroup: baselineVPCInfrastructure.ecsSecurityGroup,
+  albSecurityGroup: baselineVPCInfrastructure.albSecurityGroup,
+  repository: ecrStack.repository,
+});
 
 // Add dependencies
-// dbStack.addDependency(baselineVPCInfrastructure);
-// ecsStack.addDependency(dbStack);
-// ecsStack.addDependency(ecrStack);
+dbStack.addDependency(baselineVPCInfrastructure);
+ecsStack.addDependency(dbStack);
+ecsStack.addDependency(ecrStack);
 
 app.synth();
