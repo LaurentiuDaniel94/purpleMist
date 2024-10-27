@@ -7,6 +7,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import * as efs from 'aws-cdk-lib/aws-efs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 
 interface EcsStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
@@ -75,10 +76,19 @@ export class EcsStack extends cdk.Stack {
       throughputMode: efs.ThroughputMode.BURSTING,
       encrypted: true,
       securityGroup: efsSecurityGroup,
+      // Create mount targets in all private subnets
       vpcSubnets: {
-        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+        onePerAz: true // Ensure one mount target per AZ
       },
       removalPolicy: cdk.RemovalPolicy.DESTROY
+    });
+
+
+    // Add dependency check to ensure mount targets are created before ECS service
+    const mountTargetParam = new ssm.StringParameter(this, 'EfsMountTargetCheck', {
+      parameterName: '/efs/mount-targets-check',
+      stringValue: fileSystem.fileSystemId,
     });
 
     // Update task role permissions with specific EFS ARN
@@ -173,7 +183,7 @@ export class EcsStack extends cdk.Stack {
       readOnly: false,
     });
 
-    // ECS Service for OpenWebUI
+    // Update ECS Service to depend on mount targets
     const openWebUIService = new ecs.FargateService(this, 'OpenWebUIService', {
       cluster,
       taskDefinition: openWebUITaskDef,
@@ -190,6 +200,9 @@ export class EcsStack extends cdk.Stack {
       minHealthyPercent: 50,
       healthCheckGracePeriod: cdk.Duration.seconds(60),
     });
+
+    // Add dependency
+    openWebUIService.node.addDependency(mountTargetParam);
 
     // Attach to ALB
     openWebUIService.attachToApplicationTargetGroup(props.targetGroup);
