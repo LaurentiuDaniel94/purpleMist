@@ -52,6 +52,15 @@ export class EcsStack extends cdk.Stack {
       encrypted: true,
     });
 
+    // Create Mount Targets for EFS
+    props.vpc.privateSubnets.forEach((subnet, index) => {
+      new efs.CfnMountTarget(this, `EFSMountTarget${index}`, {
+        fileSystemId: fileSystem.fileSystemId,
+        subnetId: subnet.subnetId,
+        securityGroups: [efsSecurityGroup.securityGroupId],
+      });
+    });
+
     // Create Access Point for EFS
     const accessPoint = fileSystem.addAccessPoint('AccessPoint', {
       path: '/webui-data',
