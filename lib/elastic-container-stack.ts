@@ -128,10 +128,11 @@ export class EcsStack extends cdk.Stack {
       taskRole: taskRole,
       executionRole: executionRole,
       runtimePlatform: {
-        cpuArchitecture: ecs.CpuArchitecture.X86_64,
+        cpuArchitecture: ecs.CpuArchitecture.ARM64, // Changed to ARM64
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
       },
     });
+    
 
     // Add permissions
     executionRole.addManagedPolicy(
@@ -239,10 +240,11 @@ export class EcsStack extends cdk.Stack {
       taskRole: bedrockTaskRole,
       executionRole: bedrockExecutionRole,
       runtimePlatform: {
-        cpuArchitecture: ecs.CpuArchitecture.X86_64,
+        cpuArchitecture: ecs.CpuArchitecture.ARM64, // Changed to ARM64
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
       },
     });
+    
 
     // Add container definition
     const bedrockContainer = bedrockTaskDef.addContainer('BedrockAccessGatewayContainer', {
