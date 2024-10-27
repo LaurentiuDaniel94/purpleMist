@@ -43,6 +43,20 @@ export class EcsStack extends cdk.Stack {
       description: 'Service discovery namespace for OpenWebUI services',
     });
 
+    // Create Security Group for EFS
+    const efsSecurityGroup = new ec2.SecurityGroup(this, 'EFSSecurityGroup', {
+      vpc: props.vpc,
+      description: 'Security group for EFS',
+      allowAllOutbound: true,
+    });
+
+    // Allow NFS traffic from ECS Security Group to EFS
+    efsSecurityGroup.addIngressRule(
+      ec2.Peer.securityGroupId(props.ecsSecurityGroup.securityGroupId),
+      ec2.Port.tcp(2049),
+      'Allow NFS access from ECS tasks'
+    );
+
     // Create EFS File System
     const fileSystem = new efs.FileSystem(this, 'OpenWebUIEfs', {
       vpc: props.vpc,
@@ -50,15 +64,7 @@ export class EcsStack extends cdk.Stack {
       performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
       throughputMode: efs.ThroughputMode.BURSTING,
       encrypted: true,
-    });
-
-    // Create Mount Targets for EFS
-    props.vpc.privateSubnets.forEach((subnet, index) => {
-      new efs.CfnMountTarget(this, `EFSMountTarget${index}`, {
-        fileSystemId: fileSystem.fileSystemId,
-        subnetId: subnet.subnetId,
-        securityGroups: [efsSecurityGroup.securityGroupId],
-      });
+      securityGroup: efsSecurityGroup,
     });
 
     // Create Access Point for EFS
@@ -74,20 +80,6 @@ export class EcsStack extends cdk.Stack {
         gid: '1001',
       },
     });
-
-    // Create Security Group for EFS
-    const efsSecurityGroup = new ec2.SecurityGroup(this, 'EFSSecurityGroup', {
-      vpc: props.vpc,
-      description: 'Security group for EFS',
-      allowAllOutbound: true,
-    });
-
-    // Allow NFS traffic from ECS Security Group to EFS
-    efsSecurityGroup.addIngressRule(
-      ec2.Peer.securityGroupId(props.ecsSecurityGroup.securityGroupId),
-      ec2.Port.tcp(2049),
-      'Allow NFS access from ECS tasks'
-    );
 
     // Task Definition for OpenWebUI
     const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
