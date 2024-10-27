@@ -86,26 +86,29 @@ export class EcsStack extends cdk.Stack {
     );
 
     // Container Definition
-    const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
-      image: ecs.ContainerImage.fromEcrRepository(props.repository, 'openwebui'),
-      environment: {
-        'WEBUI_SECRET_KEY': '123456',
-        'DEBUG': 'true',
-        'DATABASE_TYPE': 'postgres',
-        'DATABASE_URL': `postgresql://postgres:=9nKAy=xNJpGycGv3WM7WHnAOONcNU@${props.dbInstance.instanceEndpoint.hostname}:5432/openwebui_db`,
-      },
-      secrets: {
-        'WEBUI_DB_USER': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'username'),
-        'WEBUI_DB_PASSWORD': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'password'),
-        'WEBUI_DB_HOST': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'DATABASE_URL'),
-        'WEBUI_DB_PORT': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'port'),
-        'WEBUI_DB_NAME': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'dbname'),
-      },
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: 'openwebui',
-        logRetention: logs.RetentionDays.ONE_WEEK,
-      }),
-    });
+// Container Definition
+const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
+  image: ecs.ContainerImage.fromEcrRepository(props.repository, 'openwebui'),
+  environment: {
+    'WEBUI_SECRET_KEY': '123456',
+    'DEBUG': 'true',
+    'DATABASE_TYPE': 'postgres',
+  },
+  secrets: {
+    // Individual components for database connection
+    'WEBUI_DB_USER': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'username'),
+    'WEBUI_DB_PASSWORD': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'password'),
+    'WEBUI_DB_HOST': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'host'),
+    'WEBUI_DB_PORT': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'port'),
+    'WEBUI_DB_NAME': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'dbname'),
+    // Construct DATABASE_URL directly
+    'DATABASE_URL': ecs.Secret.fromSecretsManager(props.dbInstance.secret!),
+  },
+  logging: ecs.LogDrivers.awsLogs({
+    streamPrefix: 'openwebui',
+    logRetention: logs.RetentionDays.ONE_WEEK,
+  }),
+});
 
     openWebUIContainer.addPortMappings({
       containerPort: 8080,
