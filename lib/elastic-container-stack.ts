@@ -163,7 +163,7 @@ const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
   environment: {
     'WEBUI_SECRET_KEY': '123456',
     'DEBUG': 'true',
-    'DATABASE_TYPE': 'sqlite',
+    'DATABASE_TYPE': 'efs',
     'DATABASE_PATH': '/app/backend/data/webui.db',
     // Add HuggingFace env vars
     'HF_HUB_ENABLE_HF_TRANSFER': 'true',
