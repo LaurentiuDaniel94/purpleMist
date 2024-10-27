@@ -44,7 +44,7 @@ jobs:
       run: npx cdk synth
       
     - name: CDK Diff
-      run: npx cdk diff
+      run: npx cdk diff --all
       
     - name: CDK Deploy
-      run: npx cdk deploy --require-approval never
+      run: npx cdk diff --all
