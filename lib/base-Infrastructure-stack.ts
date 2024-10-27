@@ -40,39 +40,6 @@ export class BaselineVPCInfrastructure extends cdk.Stack {
       ]
     });
 
-    // VPC Endpoints
-    this.vpc.addInterfaceEndpoint('EcrEndpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.ECR,
-    });
-
-    this.vpc.addInterfaceEndpoint('EcrDockerEndpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
-    });
-
-    this.vpc.addGatewayEndpoint('S3Endpoint', {
-      service: ec2.GatewayVpcEndpointAwsService.S3,
-    });
-
-    this.vpc.addInterfaceEndpoint('SecretsEndpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-    });
-
-    this.vpc.addInterfaceEndpoint('EcsEndpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.ECS,
-    });
-
-    this.vpc.addInterfaceEndpoint('EcsAgentEndpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.ECS_AGENT,
-    });
-
-    this.vpc.addInterfaceEndpoint('EcsTelemetryEndpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.ECS_TELEMETRY,
-    });
-
-    this.vpc.addInterfaceEndpoint('BedrockEndpoint', {
-      service: ec2.InterfaceVpcEndpointAwsService.BEDROCK_RUNTIME,
-    });
-
     // Security Groups
     this.dbSecurityGroup = new ec2.SecurityGroup(this, 'DBSecurityGroup', {
       vpc: this.vpc,
