@@ -6,6 +6,8 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+
 
 interface EcsStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
@@ -29,6 +31,17 @@ export class EcsStack extends cdk.Stack {
 
     const executionRole = new iam.Role(this, 'OpenWebUIExecutionRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+    });
+
+    // Construct the DATABASE_URL from the existing RDS secret
+
+    const dbSecret = props.dbInstance.secret!;
+    const databaseUrl = `postgresql://${dbSecret.secretValueFromJson('username').unsafeUnwrap()}:${dbSecret.secretValueFromJson('password').unsafeUnwrap()}@${dbSecret.secretValueFromJson('host').unsafeUnwrap()}:${dbSecret.secretValueFromJson('port').unsafeUnwrap()}/${dbSecret.secretValueFromJson('dbname').unsafeUnwrap()}`;
+
+    const databaseUrlSecret = new secretsmanager.Secret(this, 'DatabaseUrlSecret', {
+      secretName: 'DATABASE_URL',
+      description: 'URL connection string for the PostgreSQL database',
+      secretStringValue: cdk.SecretValue.unsafePlainText(databaseUrl),
     });
 
     // Task Definition
@@ -72,11 +85,7 @@ const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
   },
   // Keep other environment variables as backup
   secrets: {
-    'POSTGRES_USER': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'username'),
-    'POSTGRES_PASSWORD': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'password'),
-    'POSTGRES_HOST': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'host'),
-    'POSTGRES_PORT': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'port'),
-    'POSTGRES_DB': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'dbname'),
+    'DATABASE_URL': ecs.Secret.fromSecretsManager(databaseUrlSecret),
   },
   logging: ecs.LogDrivers.awsLogs({
     streamPrefix: 'openwebui',
