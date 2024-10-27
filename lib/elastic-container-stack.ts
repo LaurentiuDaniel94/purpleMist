@@ -93,16 +93,16 @@ const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
     'WEBUI_SECRET_KEY': '123456',
     'DEBUG': 'true',
     'DATABASE_TYPE': 'postgres',
+    // Set the DATABASE_URL explicitly with the correct format
+    'DATABASE_URL': `postgresql://postgres:${props.dbInstance.secret?.secretValueFromJson('password')}@${props.dbInstance.secret?.secretValueFromJson('host')}:5432/${props.dbInstance.secret?.secretValueFromJson('dbname')}`,
   },
+  // Keep other environment variables as backup
   secrets: {
-    // Individual components for database connection
-    'WEBUI_DB_USER': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'username'),
-    'WEBUI_DB_PASSWORD': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'password'),
-    'WEBUI_DB_HOST': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'host'),
-    'WEBUI_DB_PORT': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'port'),
-    'WEBUI_DB_NAME': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'dbname'),
-    // Construct DATABASE_URL directly
-    'DATABASE_URL': ecs.Secret.fromSecretsManager(props.dbInstance.secret!),
+    'POSTGRES_USER': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'username'),
+    'POSTGRES_PASSWORD': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'password'),
+    'POSTGRES_HOST': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'host'),
+    'POSTGRES_PORT': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'port'),
+    'POSTGRES_DB': ecs.Secret.fromSecretsManager(props.dbInstance.secret!, 'dbname'),
   },
   logging: ecs.LogDrivers.awsLogs({
     streamPrefix: 'openwebui',
