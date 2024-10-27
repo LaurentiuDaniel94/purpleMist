@@ -18,6 +18,7 @@ const ecsStack = new EcsStack(app, 'EcsStack', {
   vpc: baselineVPCInfrastructure.vpc,
   ecsSecurityGroup: baselineVPCInfrastructure.ecsSecurityGroup,
   albSecurityGroup: baselineVPCInfrastructure.albSecurityGroup,
+  bedrockGatewaySecurityGroup: baselineVPCInfrastructure.bedrockGatewaySecurityGroup,
   repository: ecrStack.repository,
   alb: baselineVPCInfrastructure.alb,
   targetGroup: baselineVPCInfrastructure.targetGroup,

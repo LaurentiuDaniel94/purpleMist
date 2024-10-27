@@ -13,16 +13,17 @@ interface EcsStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
   ecsSecurityGroup: ec2.SecurityGroup;
   albSecurityGroup: ec2.SecurityGroup;
-  repository: ecr.Repository;
+  bedrockGatewaySecurityGroup: ec2.SecurityGroup;
   alb: elbv2.ApplicationLoadBalancer;
   targetGroup: elbv2.ApplicationTargetGroup;
+  repository: ecr.Repository;
 }
 
 export class EcsStack extends cdk.Stack {
   constructor(scope: cdk.App, id: string, props: EcsStackProps) {
     super(scope, id, props);
 
-    // Create roles
+    // Create roles for OpenWebUI
     const taskRole = new iam.Role(this, 'OpenWebUITaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
     });
@@ -47,11 +48,18 @@ export class EcsStack extends cdk.Stack {
       containerInsights: true,
     });
 
-    // Service Discovery Namespace
+    // Service Discovery Namespace for OpenWebUI
     const namespace = new servicediscovery.PrivateDnsNamespace(this, 'OpenWebUINamespace', {
       vpc: props.vpc,
       name: 'openwebui.local',
       description: 'Service discovery namespace for OpenWebUI services',
+    });
+
+    // Service Discovery Namespace for Bedrock Gateway
+    const bedrockNamespace = new servicediscovery.PrivateDnsNamespace(this, 'BedrockNamespace', {
+      vpc: props.vpc,
+      name: 'bedrockforward.local',
+      description: 'Service discovery namespace for Bedrock Access Gateway',
     });
 
     // Create Security Group for EFS
@@ -76,14 +84,12 @@ export class EcsStack extends cdk.Stack {
       throughputMode: efs.ThroughputMode.BURSTING,
       encrypted: true,
       securityGroup: efsSecurityGroup,
-      // Create mount targets in all private subnets
       vpcSubnets: {
         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-        onePerAz: true // Ensure one mount target per AZ
+        onePerAz: true
       },
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
-
 
     // Add dependency check to ensure mount targets are created before ECS service
     const mountTargetParam = new ssm.StringParameter(this, 'EfsMountTargetCheck', {
@@ -117,12 +123,12 @@ export class EcsStack extends cdk.Stack {
 
     // Task Definition for OpenWebUI
     const openWebUITaskDef = new ecs.FargateTaskDefinition(this, 'OpenWebUITask', {
-      memoryLimitMiB: 2048,  // Increase from 512 to 2048
-      cpu: 1024,            // Increase from 256 to 1024
+      memoryLimitMiB: 2048,
+      cpu: 1024,
       taskRole: taskRole,
       executionRole: executionRole,
       runtimePlatform: {
-        cpuArchitecture: ecs.CpuArchitecture.ARM64,
+        cpuArchitecture: ecs.CpuArchitecture.X86_64,
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
       },
     });
@@ -144,7 +150,7 @@ export class EcsStack extends cdk.Stack {
 
     // EFS Volume Configuration
     openWebUITaskDef.addVolume({
-      name: 'WebUIEfsVolume',
+      name: 'OpenWebUIEFSVolume',
       efsVolumeConfiguration: {
         fileSystemId: fileSystem.fileSystemId,
         transitEncryption: 'ENABLED',
@@ -157,27 +163,17 @@ export class EcsStack extends cdk.Stack {
     });
 
     // Container Definition for OpenWebUI
-// Container Definition for OpenWebUI
-const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
-  image: ecs.ContainerImage.fromEcrRepository(props.repository, 'openwebui'),
-  environment: {
-    'WEBUI_SECRET_KEY': '123456',
-    'DEBUG': 'true',
-    'DATABASE_TYPE': 'efs',
-    'DATABASE_PATH': '/app/backend/data/webui.db',
-    // Add HuggingFace env vars
-    'HF_HUB_ENABLE_HF_TRANSFER': 'true',
-    'TRANSFORMERS_CACHE': '/app/backend/data/cache',
-    'HF_HOME': '/app/backend/data/huggingface',
-    'USER_AGENT': 'open-webui/0.3.10',
-    'local_files_only': 'false',
-    'HUGGINGFACE_HUB_CACHE': '/app/backend/data/huggingface',
-  },
-  logging: ecs.LogDrivers.awsLogs({
-    streamPrefix: 'openwebui',
-    logRetention: logs.RetentionDays.ONE_WEEK,
-  }),
-});
+    const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
+      image: ecs.ContainerImage.fromEcrRepository(props.repository, 'openwebui'),
+      environment: {
+        'OPENAI_API_BASE_URL': 'http://bedrock-gateway.bedrockforward.local/api/v1',
+        'OPENAI_API_KEY': 'bedrock',
+      },
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'openwebui',
+        logRetention: logs.RetentionDays.ONE_WEEK,
+      }),
+    });
 
     openWebUIContainer.addPortMappings({
       containerPort: 8080,
@@ -187,7 +183,7 @@ const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
     // Mount EFS to the container
     openWebUIContainer.addMountPoints({
       containerPath: '/app/backend/data',
-      sourceVolume: 'WebUIEfsVolume',
+      sourceVolume: 'OpenWebUIEFSVolume',
       readOnly: false,
     });
 
@@ -215,11 +211,82 @@ const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
     // Attach to ALB
     openWebUIService.attachToApplicationTargetGroup(props.targetGroup);
 
+    // --- Bedrock Access Gateway Configuration ---
+
+    // Create roles for Bedrock Access Gateway
+    const bedrockTaskRole = new iam.Role(this, 'BedrockAccessGatewayTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+    });
+
+    // Attach AmazonBedrockFullAccess policy
+    bedrockTaskRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonBedrockFullAccess')
+    );
+
+    // Create execution role
+    const bedrockExecutionRole = new iam.Role(this, 'BedrockAccessGatewayExecutionRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+    });
+
+    // Attach ecsTaskExecutionRole policy to execution role
+    bedrockExecutionRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy')
+    );
+
+    // Create task definition for Bedrock Access Gateway
+    const bedrockTaskDef = new ecs.FargateTaskDefinition(this, 'BedrockAccessGatewayTaskDef', {
+      memoryLimitMiB: 3072,
+      cpu: 1024,
+      taskRole: bedrockTaskRole,
+      executionRole: bedrockExecutionRole,
+      runtimePlatform: {
+        cpuArchitecture: ecs.CpuArchitecture.X86_64,
+        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+      },
+    });
+
+    // Add container definition
+    const bedrockContainer = bedrockTaskDef.addContainer('BedrockAccessGatewayContainer', {
+      image: ecs.ContainerImage.fromEcrRepository(props.repository, 'bedrock-gateway'),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'bedrock-access-gateway',
+        logRetention: logs.RetentionDays.ONE_WEEK,
+      }),
+    });
+
+    bedrockContainer.addPortMappings({
+      containerPort: 80,
+      protocol: ecs.Protocol.TCP,
+    });
+
+    // Create ECS service for Bedrock Access Gateway
+    const bedrockService = new ecs.FargateService(this, 'BedrockAccessGatewayService', {
+      cluster,
+      taskDefinition: bedrockTaskDef,
+      desiredCount: 1,
+      securityGroups: [props.bedrockGatewaySecurityGroup],
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+      },
+      cloudMapOptions: {
+        cloudMapNamespace: bedrockNamespace,
+        name: 'bedrock-gateway',
+      },
+      healthCheckGracePeriod: cdk.Duration.seconds(60),
+    });
+
     // Output the File System ID
     new cdk.CfnOutput(this, 'FileSystemId', {
       value: fileSystem.fileSystemId,
       description: 'EFS File System ID',
       exportName: 'efsFileSystemId'
+    });
+
+    // Output the ALB DNS Name
+    new cdk.CfnOutput(this, 'ALBDnsName', {
+      value: props.alb.loadBalancerDnsName,
+      description: 'ALB DNS Name',
+      exportName: 'albDnsName'
     });
   }
 }
