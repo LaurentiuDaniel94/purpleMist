@@ -14,10 +14,10 @@ const baselineVPCInfrastructure = new BaselineVPCInfrastructure(app, 'baselineVP
 const ecrStack = new EcrStack(app, 'EcrStack');
 
 // Create DB Stack
-// const dbStack = new DatabaseStack(app, 'DatabaseStack', {
-//   vpc: baselineVPCInfrastructure.vpc,
-//   dbSecurityGroup: baselineVPCInfrastructure.dbSecurityGroup,
-// });
+const dbStack = new DatabaseStack(app, 'DatabaseStack', {
+  vpc: baselineVPCInfrastructure.vpc,
+  dbSecurityGroup: baselineVPCInfrastructure.dbSecurityGroup,
+});
 
 // // Create ECS Stack
 // const ecsStack = new EcsStack(app, 'EcsStack', {
