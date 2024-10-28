@@ -175,6 +175,7 @@ export class EcsStack extends cdk.Stack {
       },
       memorySize: 2048,
       timeout: cdk.Duration.minutes(5),
+      architecture: lambda.Architecture.ARM_64,
       environment: {
         'BOTO3_CONFIG_MAX_RETRIES': '2',
         'BOTO3_CONFIG_RETRY_MODE': 'adaptive'
