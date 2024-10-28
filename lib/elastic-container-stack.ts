@@ -8,6 +8,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import * as efs from 'aws-cdk-lib/aws-efs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 
 interface EcsStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
@@ -164,22 +165,47 @@ export class EcsStack extends cdk.Stack {
       },
     });
 
+    const bedrockGatewayFunction = new lambda.DockerImageFunction(this, 'BedrockGatewayFunction', {
+      code: lambda.DockerImageCode.fromEcr(props.repository, {
+        tagOrDigest: 'bedrock-gateway'
+      }),
+      vpc: props.vpc,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
+      },
+      memorySize: 2048,
+      timeout: cdk.Duration.minutes(5),
+      environment: {
+        'BOTO3_CONFIG_MAX_RETRIES': '2',
+        'BOTO3_CONFIG_RETRY_MODE': 'adaptive'
+      },
+      securityGroups: [props.bedrockGatewaySecurityGroup]
+    });
+
+    // Add permissions to Lambda function
+        // Add Bedrock permissions
+        bedrockGatewayFunction.addToRolePolicy(new iam.PolicyStatement({
+          actions: ['bedrock:*'],
+          resources: ['*']
+        }));
+
+        // Create Function URL
+
+        const functionUrl = bedrockGatewayFunction.addFunctionUrl({
+          authType: lambda.FunctionUrlAuthType.NONE,  // Or AWS_IAM if you want authentication
+          cors: {
+            allowedOrigins: ['*'],
+            allowedMethods: [lambda.HttpMethod.POST],
+            allowedHeaders: ['*']
+          }
+        });
+
     // Container Definition for OpenWebUI
     const openWebUIContainer = openWebUITaskDef.addContainer('OpenWebUI', {
       image: ecs.ContainerImage.fromEcrRepository(props.repository, 'openwebui'),
       environment: {
-        'OPENAI_API_BASE_URL': 'http://bedrock-gateway.bedrockforward.local/api/v1',
+        'OPENAI_API_BASE_URL': functionUrl.url + 'api/v1',  // Use Function URL
         'OPENAI_API_KEY': 'bedrock',
-        // Add these settings
-        'ENDPOINTS_CONFIG': JSON.stringify({
-          'bedrock-gateway': {
-            'url': 'http://bedrock-gateway.bedrockforward.local',
-            'weight': 1,
-            'retry_count': 2,
-            'timeout': 90,
-            'max_concurrent': 2
-          }
-        })
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'openwebui',
@@ -224,74 +250,74 @@ export class EcsStack extends cdk.Stack {
 
     // --- Bedrock Access Gateway Configuration ---
 
-    // Create roles for Bedrock Access Gateway
-    const bedrockTaskRole = new iam.Role(this, 'BedrockAccessGatewayTaskRole', {
-      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
-    });
+//     // Create roles for Bedrock Access Gateway
+//     const bedrockTaskRole = new iam.Role(this, 'BedrockAccessGatewayTaskRole', {
+//       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+//     });
 
-    // Attach AmazonBedrockFullAccess policy
-    bedrockTaskRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonBedrockFullAccess')
-    );
+//     // Attach AmazonBedrockFullAccess policy
+//     bedrockTaskRole.addManagedPolicy(
+//       iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonBedrockFullAccess')
+//     );
 
-    // Create execution role
-    const bedrockExecutionRole = new iam.Role(this, 'BedrockAccessGatewayExecutionRole', {
-      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
-    });
+//     // Create execution role
+//     const bedrockExecutionRole = new iam.Role(this, 'BedrockAccessGatewayExecutionRole', {
+//       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+//     });
 
-    // Attach ecsTaskExecutionRole policy to execution role
-    bedrockExecutionRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy')
-    );
+//     // Attach ecsTaskExecutionRole policy to execution role
+//     bedrockExecutionRole.addManagedPolicy(
+//       iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy')
+//     );
 
-    // Create task definition for Bedrock Access Gateway
-    const bedrockTaskDef = new ecs.FargateTaskDefinition(this, 'BedrockAccessGatewayTaskDef', {
-      memoryLimitMiB: 3072,
-      cpu: 1024,
-      taskRole: bedrockTaskRole,
-      executionRole: bedrockExecutionRole,
-      runtimePlatform: {
-        cpuArchitecture: ecs.CpuArchitecture.ARM64, // Changed to ARM64
-        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
-      },
-    });
+//     // Create task definition for Bedrock Access Gateway
+//     const bedrockTaskDef = new ecs.FargateTaskDefinition(this, 'BedrockAccessGatewayTaskDef', {
+//       memoryLimitMiB: 3072,
+//       cpu: 1024,
+//       taskRole: bedrockTaskRole,
+//       executionRole: bedrockExecutionRole,
+//       runtimePlatform: {
+//         cpuArchitecture: ecs.CpuArchitecture.ARM64, // Changed to ARM64
+//         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+//       },
+//     });
     
 
-    // Add container definition
-// Add container definition
-const bedrockContainer = bedrockTaskDef.addContainer('BedrockAccessGatewayContainer', {
-  image: ecs.ContainerImage.fromEcrRepository(props.repository, 'bedrock-gateway'),
-  logging: ecs.LogDrivers.awsLogs({
-    streamPrefix: 'bedrock-access-gateway',
-    logRetention: logs.RetentionDays.ONE_WEEK,
-  }),
-  environment: {
-    'BOTO3_CONFIG_MAX_RETRIES': '2',
-    'BOTO3_CONFIG_RETRY_MODE': 'adaptive',
-    'BEDROCK_MAX_CONCURRENT_REQUESTS': '3',
-    'BEDROCK_REQUESTS_PER_MINUTE': '10',
-  }
-});
+//     // Add container definition
+// // Add container definition
+// const bedrockContainer = bedrockTaskDef.addContainer('BedrockAccessGatewayContainer', {
+//   image: ecs.ContainerImage.fromEcrRepository(props.repository, 'bedrock-gateway'),
+//   logging: ecs.LogDrivers.awsLogs({
+//     streamPrefix: 'bedrock-access-gateway',
+//     logRetention: logs.RetentionDays.ONE_WEEK,
+//   }),
+//   environment: {
+//     'BOTO3_CONFIG_MAX_RETRIES': '2',
+//     'BOTO3_CONFIG_RETRY_MODE': 'adaptive',
+//     'BEDROCK_MAX_CONCURRENT_REQUESTS': '3',
+//     'BEDROCK_REQUESTS_PER_MINUTE': '10',
+//   }
+// });
 
-    bedrockContainer.addPortMappings({
-      containerPort: 80,
-      protocol: ecs.Protocol.TCP,
-    });
+//     bedrockContainer.addPortMappings({
+//       containerPort: 80,
+//       protocol: ecs.Protocol.TCP,
+//     });
 
-    // Create ECS service for Bedrock Access Gateway
-    const bedrockService = new ecs.FargateService(this, 'BedrockAccessGatewayService', {
-      cluster,
-      taskDefinition: bedrockTaskDef,
-      desiredCount: 1,
-      securityGroups: [props.bedrockGatewaySecurityGroup],
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-      },
-      cloudMapOptions: {
-        cloudMapNamespace: bedrockNamespace,
-        name: 'bedrock-gateway',
-      },
-    });
+//     // Create ECS service for Bedrock Access Gateway
+//     const bedrockService = new ecs.FargateService(this, 'BedrockAccessGatewayService', {
+//       cluster,
+//       taskDefinition: bedrockTaskDef,
+//       desiredCount: 1,
+//       securityGroups: [props.bedrockGatewaySecurityGroup],
+//       vpcSubnets: {
+//         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+//       },
+//       cloudMapOptions: {
+//         cloudMapNamespace: bedrockNamespace,
+//         name: 'bedrock-gateway',
+//       },
+//     });
 
     // Output the File System ID
     new cdk.CfnOutput(this, 'FileSystemId', {
