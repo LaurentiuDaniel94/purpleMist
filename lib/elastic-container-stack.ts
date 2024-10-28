@@ -170,6 +170,16 @@ export class EcsStack extends cdk.Stack {
       environment: {
         'OPENAI_API_BASE_URL': 'http://bedrock-gateway.bedrockforward.local/api/v1',
         'OPENAI_API_KEY': 'bedrock',
+        // Add these settings
+        'ENDPOINTS_CONFIG': JSON.stringify({
+          'bedrock-gateway': {
+            'url': 'http://bedrock-gateway.bedrockforward.local',
+            'weight': 1,
+            'retry_count': 2,
+            'timeout': 90,
+            'max_concurrent': 2
+          }
+        })
       },
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'openwebui',
@@ -248,13 +258,20 @@ export class EcsStack extends cdk.Stack {
     
 
     // Add container definition
-    const bedrockContainer = bedrockTaskDef.addContainer('BedrockAccessGatewayContainer', {
-      image: ecs.ContainerImage.fromEcrRepository(props.repository, 'bedrock-gateway'),
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: 'bedrock-access-gateway',
-        logRetention: logs.RetentionDays.ONE_WEEK,
-      }),
-    });
+// Add container definition
+const bedrockContainer = bedrockTaskDef.addContainer('BedrockAccessGatewayContainer', {
+  image: ecs.ContainerImage.fromEcrRepository(props.repository, 'bedrock-gateway'),
+  logging: ecs.LogDrivers.awsLogs({
+    streamPrefix: 'bedrock-access-gateway',
+    logRetention: logs.RetentionDays.ONE_WEEK,
+  }),
+  environment: {
+    'BOTO3_CONFIG_MAX_RETRIES': '2',
+    'BOTO3_CONFIG_RETRY_MODE': 'adaptive',
+    'BEDROCK_MAX_CONCURRENT_REQUESTS': '3',
+    'BEDROCK_REQUESTS_PER_MINUTE': '10',
+  }
+});
 
     bedrockContainer.addPortMappings({
       containerPort: 80,
