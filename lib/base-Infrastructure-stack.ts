@@ -15,11 +15,11 @@ export class BaselineVPCInfrastructure extends cdk.Stack {
     super(scope, id, props);
 
     // VPC with specific CIDR block
-    this.vpc = new ec2.Vpc(this, "InfraVpc", {
+    this.vpc = new ec2.Vpc(this, "baseInfraVPC", {
       maxAzs: 3,
       natGateways: 1,
       vpcName: "llm-platform-vpc",
-      restrictDefaultSecurityGroup: false,
+      restrictDefaultSecurityGroup: true,
       ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/24'),
       subnetConfiguration: [
         {
@@ -28,12 +28,12 @@ export class BaselineVPCInfrastructure extends cdk.Stack {
           cidrMask: 28,
         },
         {
-          name: 'Private',
+          name: 'OpenWebUI-Private',
           subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
           cidrMask: 28,
         },
         {
-          name: 'BedrockGateway',
+          name: 'BedrockGateway-Private',
           subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
           cidrMask: 28,
         }
