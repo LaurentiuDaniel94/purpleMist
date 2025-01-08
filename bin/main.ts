@@ -3,7 +3,7 @@ import * as cdk from 'aws-cdk-lib';
 import { BaselineVPCInfrastructure } from '../lib/base-Infrastructure-stack';
 import { EcrStack } from '../lib/image-repository-stack';
 import { EcsStack } from '../lib/elastic-container-stack';
-
+//
 const app = new cdk.App();
 
 // Create VPC Stack
